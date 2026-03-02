@@ -1,0 +1,18 @@
+{
+  "name": "tute-subastado",
+  "private": true,
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "dev": "concurrently -n WEB,RT -c auto \"npm run dev -w apps/web\" \"npm run dev -w apps/realtime\"",
+    "dev:web": "npm run dev -w apps/web",
+    "dev:realtime": "npm run dev -w apps/realtime",
+    "build": "npm run build -w apps/web && npm run build -w apps/realtime",
+    "lint": "npm run lint -w apps/web"
+  },
+  "devDependencies": {
+    "concurrently": "^9.0.0"
+  }
+}

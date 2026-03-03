@@ -1,11 +1,13 @@
 "use client";
 
+import Image from "next/image";
 import { useEffect, useMemo, useState } from "react";
 import {
   applyBid,
   applyChooseTrump,
   applyPlayCard,
   cardLabel,
+  Card,
   createGame,
   GameState,
   getBotAction,
@@ -32,6 +34,10 @@ const SEATS: Seat[] = [
 
 function nextBid(currentBid: number | null): number {
   return currentBid === null ? MIN_BID : currentBid + 10;
+}
+
+function cardImageSrc(card: Card): string {
+  return `/cards/${card.suit}_${card.rank}.png`;
 }
 
 function seatPositionClasses(position: Seat["position"]): string {
@@ -116,7 +122,7 @@ export default function Home() {
         <div className="relative min-h-[720px] overflow-hidden rounded-3xl border border-emerald-900/60 bg-[radial-gradient(circle_at_30%_20%,rgba(52,211,153,0.2),transparent_35%),radial-gradient(circle_at_75%_70%,rgba(16,185,129,0.15),transparent_45%),linear-gradient(145deg,#0f4a37_0%,#0d5a40_45%,#0b3b2d_100%)] shadow-inner">
           <div className="pointer-events-none absolute inset-0 opacity-30 [background-image:repeating-linear-gradient(45deg,rgba(255,255,255,0.04)_0px,rgba(255,255,255,0.04)_2px,transparent_2px,transparent_8px)]" />
 
-          <div className="absolute left-1/2 top-1/2 w-[min(20rem,80vw)] -translate-x-1/2 -translate-y-1/2 rounded-2xl border border-emerald-200/20 bg-[#0a2f24]/80 p-4 text-center shadow-2xl backdrop-blur-sm">
+          <div className="absolute left-1/2 top-1/2 w-[min(22rem,86vw)] -translate-x-1/2 -translate-y-1/2 rounded-2xl border border-emerald-200/20 bg-[#0a2f24]/80 p-4 text-center shadow-2xl backdrop-blur-sm">
             <p className="text-xs uppercase tracking-[0.22em] text-emerald-100/80">Centro de mesa</p>
             <p className="mt-1 text-sm text-emerald-50">Turno: {game.players[game.currentTurn]}</p>
             <p className="text-sm text-emerald-100/85">
@@ -130,12 +136,15 @@ export default function Home() {
                 <p className="col-span-2 rounded-lg border border-emerald-100/15 bg-emerald-950/35 px-2 py-1">Sin cartas en mesa</p>
               ) : (
                 game.currentTrick.cards.map((entry) => (
-                  <p
+                  <div
                     key={`${entry.playerIndex}-${entry.card.id}`}
-                    className="rounded-lg border border-emerald-100/15 bg-emerald-950/35 px-2 py-1"
+                    className="rounded-lg border border-emerald-100/15 bg-emerald-950/35 p-2"
                   >
-                    {game.players[entry.playerIndex]}: {cardLabel(entry.card)}
-                  </p>
+                    <p className="mb-1 text-[11px]">{game.players[entry.playerIndex]}</p>
+                    <div className="mx-auto w-fit overflow-hidden rounded-md border border-black/20 bg-white/90">
+                      <Image alt={cardLabel(entry.card)} height={88} src={cardImageSrc(entry.card)} width={58} />
+                    </div>
+                  </div>
                 ))
               )}
             </div>
@@ -172,16 +181,16 @@ export default function Home() {
                       return (
                         <button
                           key={card.id}
-                          className={`rounded-md border px-2 py-1 text-xs font-medium transition ${
+                          className={`overflow-hidden rounded-md border transition ${
                             isPlayable
-                              ? "border-amber-200 bg-amber-100 text-[#1c140d] hover:-translate-y-0.5"
-                              : "border-emerald-100/20 bg-emerald-950/55 text-emerald-50/85"
+                              ? "border-amber-200 bg-amber-100 shadow-[0_6px_14px_rgba(0,0,0,0.25)] hover:-translate-y-1"
+                              : "border-emerald-100/20 bg-emerald-950/55"
                           } disabled:cursor-not-allowed disabled:opacity-45`}
                           disabled={disabled}
                           onClick={() => setGame((prev) => applyPlayCard(prev, 0, card.id))}
                           type="button"
                         >
-                          {cardLabel(card)}
+                          <Image alt={cardLabel(card)} height={110} src={cardImageSrc(card)} width={72} />
                         </button>
                       );
                     })}
@@ -191,10 +200,18 @@ export default function Home() {
                     {Array.from({ length: Math.min(cardsInHand, 10) }).map((_, idx) => (
                       <span
                         key={`${seat.label}-back-${idx}`}
-                        className={`block rounded border border-emerald-100/25 bg-[linear-gradient(160deg,#115b45,#0b3d2f)] ${
+                        className={`block overflow-hidden rounded border border-emerald-100/25 ${
                           seat.position === "top" ? "h-8 w-5" : "h-7 w-4"
                         }`}
-                      />
+                      >
+                        <Image
+                          alt="Carta boca abajo"
+                          className="h-full w-full object-cover"
+                          height={seat.position === "top" ? 32 : 28}
+                          src="/cards/back.png"
+                          width={seat.position === "top" ? 20 : 16}
+                        />
+                      </span>
                     ))}
                   </div>
                 )}

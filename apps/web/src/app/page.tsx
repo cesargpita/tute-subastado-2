@@ -1,11 +1,13 @@
 "use client";
 
 import Image from "next/image";
+import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import {
   applyBid,
   applyChooseTrump,
   applyPlayCard,
+  BID_STEP,
   cardLabel,
   Card,
   createGame,
@@ -13,6 +15,7 @@ import {
   getBotAction,
   isBotTurn,
   isLegalCardPlay,
+  MAX_BID,
   MIN_BID,
   Suit,
 } from "@/lib/tute";
@@ -33,7 +36,7 @@ const SEATS: Seat[] = [
 ];
 
 function nextBid(currentBid: number | null): number {
-  return currentBid === null ? MIN_BID : currentBid + 10;
+  return currentBid === null ? MIN_BID : currentBid + BID_STEP;
 }
 
 function cardImageSrc(card: Card): string {
@@ -58,9 +61,13 @@ function seatPositionClasses(position: Seat["position"]): string {
 
 export default function Home() {
   const [game, setGame] = useState<GameState>(() => createGame());
+  const [now, setNow] = useState<number>(() => Date.now());
+  const trickResultToast =
+    game.lastTrickResult && now - game.lastTrickResult.id < 2600 ? game.lastTrickResult : null;
+  const freezeBetweenTricks = game.phase === "playing" && game.currentTrick.cards.length === 0 && Boolean(trickResultToast);
 
   useEffect(() => {
-    if (!isBotTurn(game)) {
+    if (!isBotTurn(game) || freezeBetweenTricks) {
       return;
     }
 
@@ -81,26 +88,36 @@ export default function Home() {
 
         return applyPlayCard(prev, action.playerIndex, action.cardId);
       });
-    }, 650);
+    }, 900);
 
     return () => clearTimeout(timer);
-  }, [game]);
+  }, [game, freezeBetweenTricks]);
+
+  useEffect(() => {
+    const timer = setInterval(() => setNow(Date.now()), 200);
+    return () => clearInterval(timer);
+  }, []);
 
   const humanHand = game.hands[0];
   const legalCards = useMemo(() => {
-    if (game.phase !== "playing" || game.currentTurn !== 0) {
+    if (game.phase !== "playing" || game.currentTurn !== 0 || game.trump === null) {
       return new Set<string>();
     }
 
     return new Set(
       humanHand
-        .filter((card) => isLegalCardPlay(humanHand, game.currentTrick, card))
+        .filter((card) => isLegalCardPlay(humanHand, game.currentTrick, card, game.trump!))
         .map((card) => card.id),
     );
   }, [game, humanHand]);
 
   const bidderPoints = game.highestBidder !== null ? game.capturedPoints[game.highestBidder] : 0;
   const contract = game.currentBid ?? 0;
+  const suggestedBid = nextBid(game.currentBid);
+  const canRaise = suggestedBid <= MAX_BID;
+  const cantoToast = game.lastCanto && now - game.lastCanto.id < 2200 ? game.lastCanto : null;
+  const tableCards =
+    game.currentTrick.cards.length > 0 ? game.currentTrick.cards : trickResultToast ? trickResultToast.cards : [];
 
   return (
     <main className="mx-auto min-h-screen w-full max-w-7xl px-3 py-6 md:px-8">
@@ -117,10 +134,32 @@ export default function Home() {
           >
             Nueva mano
           </button>
+          <Link
+            className="rounded-lg border border-emerald-200/30 bg-emerald-900/60 px-4 py-2 text-sm font-semibold text-emerald-50 hover:bg-emerald-800"
+            href="/reglas"
+          >
+            Ver reglas
+          </Link>
         </div>
 
         <div className="relative min-h-[720px] overflow-hidden rounded-3xl border border-emerald-900/60 bg-[radial-gradient(circle_at_30%_20%,rgba(52,211,153,0.2),transparent_35%),radial-gradient(circle_at_75%_70%,rgba(16,185,129,0.15),transparent_45%),linear-gradient(145deg,#0f4a37_0%,#0d5a40_45%,#0b3b2d_100%)] shadow-inner">
           <div className="pointer-events-none absolute inset-0 opacity-30 [background-image:repeating-linear-gradient(45deg,rgba(255,255,255,0.04)_0px,rgba(255,255,255,0.04)_2px,transparent_2px,transparent_8px)]" />
+          {cantoToast && (
+            <div className="pointer-events-none absolute left-1/2 top-3 z-20 -translate-x-1/2 animate-pulse rounded-xl border border-amber-100/50 bg-[linear-gradient(160deg,#f59e0b,#b45309)] px-4 py-2 text-center shadow-2xl">
+              <p className="text-[11px] font-bold uppercase tracking-[0.16em] text-amber-100">Canto</p>
+              <p className="text-sm font-extrabold text-white">{game.players[cantoToast.playerIndex]}: +{cantoToast.points}</p>
+              <p className="text-xs font-semibold text-amber-100/90">{cantoToast.message}</p>
+            </div>
+          )}
+          {trickResultToast && (
+            <div className="pointer-events-none absolute left-1/2 top-20 z-20 -translate-x-1/2 rounded-xl border border-emerald-100/50 bg-[linear-gradient(150deg,#059669,#065f46)] px-4 py-2 text-center shadow-2xl">
+              <p className="text-[11px] font-bold uppercase tracking-[0.16em] text-emerald-100">Baza resuelta</p>
+              <p className="text-sm font-extrabold text-white">
+                {game.players[trickResultToast.winner]} gana la baza
+              </p>
+              <p className="text-xs font-semibold text-emerald-100/90">+{trickResultToast.points} puntos</p>
+            </div>
+          )}
 
           <div className="absolute left-1/2 top-1/2 w-[min(22rem,86vw)] -translate-x-1/2 -translate-y-1/2 rounded-2xl border border-emerald-200/20 bg-[#0a2f24]/80 p-4 text-center shadow-2xl backdrop-blur-sm">
             <p className="text-xs uppercase tracking-[0.22em] text-emerald-100/80">Centro de mesa</p>
@@ -132,10 +171,10 @@ export default function Home() {
               Contrato: <span className="font-semibold">{contract || "-"}</span>
             </p>
             <div className="mt-3 grid grid-cols-2 gap-2 text-xs text-emerald-50">
-              {game.currentTrick.cards.length === 0 ? (
+              {tableCards.length === 0 ? (
                 <p className="col-span-2 rounded-lg border border-emerald-100/15 bg-emerald-950/35 px-2 py-1">Sin cartas en mesa</p>
               ) : (
-                game.currentTrick.cards.map((entry) => (
+                tableCards.map((entry) => (
                   <div
                     key={`${entry.playerIndex}-${entry.card.id}`}
                     className="rounded-lg border border-emerald-100/15 bg-emerald-950/35 p-2"
@@ -176,7 +215,7 @@ export default function Home() {
                   <div className="mt-3 flex flex-wrap justify-center gap-1.5">
                     {humanHand.map((card) => {
                       const isPlayable = legalCards.has(card.id);
-                      const disabled = game.phase !== "playing" || game.currentTurn !== 0 || !isPlayable;
+                      const disabled = game.phase !== "playing" || game.currentTurn !== 0 || !isPlayable || freezeBetweenTricks;
 
                       return (
                         <button
@@ -228,13 +267,17 @@ export default function Home() {
               <div>
                 <h3 className="mb-2 text-base font-semibold">Tu turno de subasta</h3>
                 <div className="flex gap-2">
-                  <button
-                    className="rounded-md bg-emerald-300 px-4 py-2 text-sm font-semibold text-[#102118] hover:bg-emerald-200"
-                    onClick={() => setGame((prev) => applyBid(prev, 0, nextBid(prev.currentBid)))}
-                    type="button"
-                  >
-                    Pujar {nextBid(game.currentBid)}
-                  </button>
+                  {canRaise ? (
+                    <button
+                      className="rounded-md bg-emerald-300 px-4 py-2 text-sm font-semibold text-[#102118] hover:bg-emerald-200"
+                      onClick={() => setGame((prev) => applyBid(prev, 0, nextBid(prev.currentBid)))}
+                      type="button"
+                    >
+                      Pujar {suggestedBid}
+                    </button>
+                  ) : (
+                    <span className="rounded-md bg-emerald-950/45 px-4 py-2 text-sm text-emerald-100/80">Puja maxima alcanzada ({MAX_BID})</span>
+                  )}
                   <button
                     className="rounded-md bg-emerald-900 px-4 py-2 text-sm font-semibold hover:bg-emerald-800"
                     onClick={() => setGame((prev) => applyBid(prev, 0, null))}
@@ -265,7 +308,11 @@ export default function Home() {
             )}
 
             {game.phase === "playing" && game.currentTurn === 0 && (
-              <p className="text-sm text-emerald-100">Juega una carta. Debes seguir el palo de salida si tienes.</p>
+              <p className="text-sm text-emerald-100">
+                {freezeBetweenTricks
+                  ? "Espera un momento: se esta mostrando el resultado de la baza."
+                  : "Juega una carta. Debes seguir el palo de salida si tienes."}
+              </p>
             )}
           </section>
         ) : null}

@@ -61,8 +61,16 @@ Current state: the project includes a functional local web vertical slice (1 hum
   - Contract result
 - Human controls for bidding, trump choice, and card play.
 - 3 bots with simple heuristics for bidding, trump choice, and card play.
-- Trick/legal-play validation (must follow lead suit when possible).
+- Trick/legal-play validation aligned with core Tute Subastado obligations:
+  - Asistir (follow suit)
+  - Montar (raise if possible)
+  - Fallar (trump if void)
+  - Pisar (overtrump when possible)
+  - Contrafallar (if no overtrump available, free play)
+- Automatic canto detection/scoring (20 normal suit, 40 trump) with in-game celebratory notification.
+- Post-trick result notification that keeps table cards visible briefly before next action.
 - Event log + phase/state panels for visibility and debugging.
+- Dedicated rules page at `apps/web/src/app/reglas/page.tsx` (`/reglas` in the app).
 
 ### Realtime app (`apps/realtime`)
 
@@ -86,12 +94,18 @@ The local vertical slice currently applies:
   - Sota = 2
   - Others = 0
 - Last trick bonus: +10 points.
-- Bidding from 70 upward in increments of 10.
+- Bidding from 60 upward in increments of 5 (up to 130).
 - Highest bidder chooses trump.
 - Trick winner computed by lead suit/trump and rank strength.
+- Card-play obligations: asistir, montar, fallar, pisar, contrafallar.
+- Canto:
+  - Rey + Caballo of the same suit.
+  - 20 points in non-trump suit.
+  - 40 points in trump suit.
+  - In this implementation canto is detected automatically when one of the pair is played while the other remains in hand.
 - Contract success/failure checked for highest bidder at hand end.
 
-Important: this is an intentionally pragmatic first implementation and not yet the full official ruleset variants (for example, advanced obligations and edge-case regional rule differences).
+Important: this is still a pragmatic implementation; regional variants and some advanced table conventions may differ.
 
 ## 6. Local Setup
 

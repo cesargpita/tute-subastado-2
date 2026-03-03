@@ -21,6 +21,21 @@ export type Trick = {
 
 export type GamePhase = "bidding" | "choose-trump" | "playing" | "finished";
 
+export type CantoEvent = {
+  id: number;
+  playerIndex: number;
+  suit: Suit;
+  points: 20 | 40;
+  message: string;
+};
+
+export type TrickResultEvent = {
+  id: number;
+  winner: number;
+  points: number;
+  cards: TrickCard[];
+};
+
 export type GameState = {
   seed: number;
   phase: GamePhase;
@@ -37,6 +52,9 @@ export type GameState = {
   currentTrick: Trick;
   completedTricks: Trick[];
   capturedPoints: number[];
+  sungCantos: Suit[][];
+  lastCanto: CantoEvent | null;
+  lastTrickResult: TrickResultEvent | null;
   log: string[];
 };
 
@@ -44,7 +62,9 @@ const SUITS: Suit[] = ["oros", "copas", "espadas", "bastos"];
 const RANKS: Rank[] = [1, 2, 3, 4, 5, 6, 7, 10, 11, 12];
 const RANK_ORDER: Rank[] = [2, 4, 5, 6, 7, 10, 11, 12, 3, 1];
 
-export const MIN_BID = 70;
+export const MIN_BID = 60;
+export const BID_STEP = 5;
+export const MAX_BID = 130;
 
 export function createDeck(): Card[] {
   const deck: Card[] = [];
@@ -128,6 +148,19 @@ function cardStrength(card: Card): number {
   return cardRankValue(card.rank);
 }
 
+function beatsInSameSuit(candidate: Card, target: Card): boolean {
+  return candidate.suit === target.suit && cardStrength(candidate) > cardStrength(target);
+}
+
+function highestCardOfSuit(cards: TrickCard[], suit: Suit): Card | null {
+  const sameSuit = cards.filter((entry) => entry.card.suit === suit).map((entry) => entry.card);
+  if (sameSuit.length === 0) {
+    return null;
+  }
+
+  return [...sameSuit].sort((a, b) => cardStrength(b) - cardStrength(a))[0]!;
+}
+
 export function trickWinner(cards: TrickCard[], trump: Suit): number {
   const leadSuit = cards[0]!.card.suit;
   const trumpCards = cards.filter((c) => c.card.suit === trump);
@@ -144,19 +177,55 @@ export function trickWinner(cards: TrickCard[], trump: Suit): number {
   return best.playerIndex;
 }
 
-export function isLegalCardPlay(hand: Card[], trick: Trick, card: Card): boolean {
+export function legalCardsForPlay(hand: Card[], trick: Trick, trump: Suit): Card[] {
+  if (trick.cards.length === 0) {
+    return [...hand];
+  }
+
+  const leadSuit = trick.cards[0]!.card.suit;
+  const leadSuitCards = hand.filter((item) => item.suit === leadSuit);
+  const trumpCards = hand.filter((item) => item.suit === trump);
+  const highestLeadOnTable = highestCardOfSuit(trick.cards, leadSuit);
+  const highestTrumpOnTable = highestCardOfSuit(trick.cards, trump);
+
+  // 1) Asistir: if possible, play lead suit.
+  if (leadSuitCards.length > 0) {
+    // 2) Montar: if possible, play a higher lead-suit card.
+    if (highestLeadOnTable) {
+      const mountingCards = leadSuitCards.filter((candidate) => beatsInSameSuit(candidate, highestLeadOnTable));
+      if (mountingCards.length > 0) {
+        return mountingCards;
+      }
+    }
+
+    return leadSuitCards;
+  }
+
+  // 3) Fallar/Pisar: no lead suit, must trump; if already trumped, must overtrump when possible.
+  if (highestTrumpOnTable) {
+    const overtrumps = trumpCards.filter((candidate) => beatsInSameSuit(candidate, highestTrumpOnTable));
+    if (overtrumps.length > 0) {
+      return overtrumps;
+    }
+
+    // 4) Contrafallar: if cannot overtrump, any card is legal.
+    return [...hand];
+  }
+
+  if (trumpCards.length > 0) {
+    return trumpCards;
+  }
+
+  // No lead suit and no trumps available: any card.
+  return [...hand];
+}
+
+export function isLegalCardPlay(hand: Card[], trick: Trick, card: Card, trump: Suit): boolean {
   if (trick.cards.length === 0) {
     return hand.some((item) => item.id === card.id);
   }
 
-  const leadSuit = trick.cards[0]!.card.suit;
-  const hasLeadSuit = hand.some((item) => item.suit === leadSuit);
-
-  if (!hasLeadSuit) {
-    return hand.some((item) => item.id === card.id);
-  }
-
-  return card.suit === leadSuit;
+  return legalCardsForPlay(hand, trick, trump).some((item) => item.id === card.id);
 }
 
 function handStrengthForBid(hand: Card[]): number {
@@ -168,28 +237,64 @@ function handStrengthForBid(hand: Card[]): number {
 export function estimateBotBid(hand: Card[]): number | null {
   const strength = handStrengthForBid(hand);
 
-  if (strength >= 58) {
-    return 120;
+  if (strength >= 60) {
+    return 130;
+  }
+
+  if (strength >= 56) {
+    return 125;
   }
 
   if (strength >= 52) {
+    return 120;
+  }
+
+  if (strength >= 48) {
+    return 115;
+  }
+
+  if (strength >= 44) {
     return 110;
   }
 
-  if (strength >= 46) {
+  if (strength >= 40) {
+    return 105;
+  }
+
+  if (strength >= 36) {
     return 100;
   }
 
-  if (strength >= 40) {
+  if (strength >= 33) {
+    return 95;
+  }
+
+  if (strength >= 30) {
     return 90;
   }
 
-  if (strength >= 34) {
+  if (strength >= 27) {
+    return 85;
+  }
+
+  if (strength >= 24) {
     return 80;
   }
 
-  if (strength >= 28) {
+  if (strength >= 21) {
+    return 75;
+  }
+
+  if (strength >= 18) {
     return 70;
+  }
+
+  if (strength >= 16) {
+    return 65;
+  }
+
+  if (strength >= 14) {
+    return 60;
   }
 
   return null;
@@ -209,7 +314,7 @@ export function chooseBotTrump(hand: Card[]): Suit {
 }
 
 export function chooseBotCard(hand: Card[], trick: Trick, trump: Suit): Card {
-  const legal = hand.filter((card) => isLegalCardPlay(hand, trick, card));
+  const legal = legalCardsForPlay(hand, trick, trump);
 
   if (trick.cards.length === 0) {
     return [...legal].sort((a, b) => cardStrength(b) - cardStrength(a))[0]!;
@@ -267,6 +372,9 @@ export function createGame(seed = Date.now()): GameState {
     currentTrick: { leader, cards: [] },
     completedTricks: [],
     capturedPoints: [0, 0, 0, 0],
+    sungCantos: [[], [], [], []],
+    lastCanto: null,
+    lastTrickResult: null,
     log: [`Nueva mano. Sale ${players[leader]}.`],
   };
 }
@@ -286,6 +394,39 @@ function removeCard(hand: Card[], cardId: string): Card[] {
   return hand.filter((card) => card.id !== cardId);
 }
 
+function automaticCantoForPlay(
+  playerIndex: number,
+  card: Card,
+  remainingHand: Card[],
+  trump: Suit,
+  alreadySung: Suit[],
+): CantoEvent | null {
+  if (card.rank !== 11 && card.rank !== 12) {
+    return null;
+  }
+
+  if (alreadySung.includes(card.suit)) {
+    return null;
+  }
+
+  const counterpartRank: Rank = card.rank === 11 ? 12 : 11;
+  const hasCounterpart = remainingHand.some((item) => item.suit === card.suit && item.rank === counterpartRank);
+
+  if (!hasCounterpart) {
+    return null;
+  }
+
+  const points: 20 | 40 = card.suit === trump ? 40 : 20;
+
+  return {
+    id: Date.now(),
+    playerIndex,
+    suit: card.suit,
+    points,
+    message: `Canto de ${points} en ${card.suit}`,
+  };
+}
+
 export function applyBid(state: GameState, playerIndex: number, bid: number | null): GameState {
   if (state.phase !== "bidding" || state.biddingTurn !== playerIndex) {
     return state;
@@ -293,9 +434,9 @@ export function applyBid(state: GameState, playerIndex: number, bid: number | nu
 
   const player = state.players[playerIndex]!;
   const previousBid = state.currentBid;
-  const legalRaise = previousBid === null ? MIN_BID : previousBid + 10;
+  const legalRaise = previousBid === null ? MIN_BID : previousBid + BID_STEP;
 
-  if (bid !== null && bid < legalRaise) {
+  if (bid !== null && (bid < legalRaise || bid > MAX_BID || bid % BID_STEP !== 0)) {
     return withLog(state, `${player} intento pujar ${bid} y no es valido.`);
   }
 
@@ -359,24 +500,39 @@ export function applyPlayCard(state: GameState, playerIndex: number, cardId: str
   const hand = state.hands[playerIndex]!;
   const card = hand.find((item) => item.id === cardId);
 
-  if (!card || !isLegalCardPlay(hand, state.currentTrick, card)) {
+  if (!card || !isLegalCardPlay(hand, state.currentTrick, card, state.trump)) {
     return withLog(state, `${state.players[playerIndex]} intento una jugada ilegal.`);
   }
 
   const nextHands = state.hands.map((h, index) => (index === playerIndex ? removeCard(h, cardId) : h));
+  const remainingHand = nextHands[playerIndex]!;
+  const canto = automaticCantoForPlay(playerIndex, card, remainingHand, state.trump, state.sungCantos[playerIndex]!);
   const nextTrick: Trick = {
     leader: state.currentTrick.leader,
     cards: [...state.currentTrick.cards, { playerIndex, card }],
   };
+
+  const nextPoints = [...state.capturedPoints];
+  const nextSungCantos = state.sungCantos.map((suits) => [...suits]);
+  if (canto) {
+    nextPoints[playerIndex] += canto.points;
+    nextSungCantos[playerIndex]!.push(canto.suit);
+  }
 
   let nextState: GameState = {
     ...state,
     hands: nextHands,
     currentTrick: nextTrick,
     currentTurn: nextIndex(playerIndex),
+    capturedPoints: nextPoints,
+    sungCantos: nextSungCantos,
+    lastCanto: canto,
   };
 
   nextState = withLog(nextState, `${state.players[playerIndex]} juega ${card.rank} de ${card.suit}.`);
+  if (canto) {
+    nextState = withLog(nextState, `${state.players[playerIndex]} canta ${canto.points} en ${canto.suit}.`);
+  }
 
   if (nextTrick.cards.length < 4) {
     return nextState;
@@ -385,14 +541,21 @@ export function applyPlayCard(state: GameState, playerIndex: number, cardId: str
   const winner = trickWinner(nextTrick.cards, state.trump);
   const points = nextTrick.cards.reduce((sum, entry) => sum + rankPoints(entry.card.rank), 0);
   const isLastTrick = nextState.hands.every((cardsInHand) => cardsInHand.length === 0);
+  const awardedPoints = points + (isLastTrick ? 10 : 0);
 
-  const nextPoints = [...nextState.capturedPoints];
-  nextPoints[winner] += points + (isLastTrick ? 10 : 0);
+  const trickPoints = [...nextState.capturedPoints];
+  trickPoints[winner] += awardedPoints;
 
   nextState = {
     ...nextState,
-    capturedPoints: nextPoints,
+    capturedPoints: trickPoints,
     completedTricks: [...nextState.completedTricks, nextTrick],
+    lastTrickResult: {
+      id: Date.now(),
+      winner,
+      points: awardedPoints,
+      cards: nextTrick.cards,
+    },
     leader: winner,
     currentTurn: winner,
     currentTrick: { leader: winner, cards: [] },
@@ -403,7 +566,7 @@ export function applyPlayCard(state: GameState, playerIndex: number, cardId: str
   if (isLastTrick) {
     const contract = nextState.currentBid ?? 0;
     const bidder = nextState.highestBidder!;
-    const bidderPoints = nextPoints[bidder];
+    const bidderPoints = trickPoints[bidder];
     const success = bidderPoints >= contract;
 
     nextState = {
@@ -450,12 +613,12 @@ export function getBotAction(state: GameState):
       return { type: "bid", playerIndex, bid: null };
     }
 
-    const minRaise = state.currentBid === null ? MIN_BID : state.currentBid + 10;
+    const minRaise = state.currentBid === null ? MIN_BID : state.currentBid + BID_STEP;
     if (estimate < minRaise) {
       return { type: "bid", playerIndex, bid: null };
     }
 
-    const capped = Math.min(120, estimate);
+    const capped = Math.min(MAX_BID, estimate);
     return { type: "bid", playerIndex, bid: capped };
   }
 

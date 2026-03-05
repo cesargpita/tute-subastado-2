@@ -8,6 +8,7 @@ import {
   applyChooseTrump,
   applyPlayCard,
   BID_STEP,
+  BotDifficulty,
   cardLabel,
   Card,
   createGame,
@@ -21,6 +22,9 @@ import {
 } from "@/lib/tute";
 
 const SUITS: Suit[] = ["oros", "copas", "espadas", "bastos"];
+const BOT_DIFFICULTIES: BotDifficulty[] = ["facil", "normal", "dificil"];
+
+type PlayMode = "bots" | "online";
 
 type Seat = {
   playerIndex: number;
@@ -29,9 +33,9 @@ type Seat = {
 };
 
 const SEATS: Seat[] = [
-  { playerIndex: 1, label: "Norte", position: "top" },
-  { playerIndex: 2, label: "Este", position: "right" },
-  { playerIndex: 3, label: "Oeste", position: "left" },
+  { playerIndex: 1, label: "Paco", position: "top" },
+  { playerIndex: 2, label: "Carmen", position: "right" },
+  { playerIndex: 3, label: "Lola", position: "left" },
   { playerIndex: 0, label: "Tu", position: "bottom" },
 ];
 
@@ -60,14 +64,17 @@ function seatPositionClasses(position: Seat["position"]): string {
 }
 
 export default function Home() {
-  const [game, setGame] = useState<GameState>(() => createGame());
+  const [mode, setMode] = useState<PlayMode>("bots");
+  const [botDifficulty, setBotDifficulty] = useState<BotDifficulty>("normal");
+  const [game, setGame] = useState<GameState>(() => createGame(Date.now(), { botDifficulty: "normal" }));
   const [now, setNow] = useState<number>(() => Date.now());
+  const isBotsMode = mode === "bots";
   const trickResultToast =
     game.lastTrickResult && now - game.lastTrickResult.id < 2600 ? game.lastTrickResult : null;
   const freezeBetweenTricks = game.phase === "playing" && game.currentTrick.cards.length === 0 && Boolean(trickResultToast);
 
   useEffect(() => {
-    if (!isBotTurn(game) || freezeBetweenTricks) {
+    if (!isBotsMode || !isBotTurn(game) || freezeBetweenTricks) {
       return;
     }
 
@@ -91,7 +98,7 @@ export default function Home() {
     }, 900);
 
     return () => clearTimeout(timer);
-  }, [game, freezeBetweenTricks]);
+  }, [game, freezeBetweenTricks, isBotsMode]);
 
   useEffect(() => {
     const timer = setInterval(() => setNow(Date.now()), 200);
@@ -125,11 +132,50 @@ export default function Home() {
         <div className="mb-4 flex flex-wrap items-center justify-between gap-3 px-2">
           <div>
             <h1 className="text-2xl font-bold tracking-wide text-amber-100 md:text-3xl">Tute Subastado</h1>
-            <p className="text-xs text-amber-200/80 md:text-sm">Mesa local: 1 jugador + 3 bots</p>
+            <p className="text-xs text-amber-200/80 md:text-sm">
+              {isBotsMode ? "Mesa local: 1 jugador + 3 bots" : "Modo online (en construccion)"}
+            </p>
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <label className="text-xs font-semibold uppercase tracking-wide text-amber-100/90" htmlFor="mode-select">
+              Modo
+            </label>
+            <select
+              className="rounded-lg border border-amber-200/20 bg-[#1f140d] px-3 py-2 text-sm text-amber-50"
+              id="mode-select"
+              onChange={(event) => {
+                const nextMode = event.target.value as PlayMode;
+                setMode(nextMode);
+              }}
+              value={mode}
+            >
+              <option value="bots">Vs bots</option>
+              <option value="online">Online</option>
+            </select>
+            <label className="text-xs font-semibold uppercase tracking-wide text-amber-100/90" htmlFor="difficulty-select">
+              Dificultad
+            </label>
+            <select
+              className="rounded-lg border border-amber-200/20 bg-[#1f140d] px-3 py-2 text-sm text-amber-50 disabled:opacity-50"
+              disabled={!isBotsMode}
+              id="difficulty-select"
+              onChange={(event) => {
+                const nextDifficulty = event.target.value as BotDifficulty;
+                setBotDifficulty(nextDifficulty);
+                setGame(createGame(Date.now(), { botDifficulty: nextDifficulty }));
+              }}
+              value={botDifficulty}
+            >
+              {BOT_DIFFICULTIES.map((level) => (
+                <option key={level} value={level}>
+                  {level}
+                </option>
+              ))}
+            </select>
           </div>
           <button
             className="rounded-lg border border-amber-200/20 bg-amber-300 px-4 py-2 text-sm font-semibold text-[#1d130b] hover:bg-amber-200"
-            onClick={() => setGame(createGame(Date.now()))}
+            onClick={() => setGame(createGame(Date.now(), { botDifficulty }))}
             type="button"
           >
             Nueva mano
@@ -141,6 +187,13 @@ export default function Home() {
             Ver reglas
           </Link>
         </div>
+
+        {!isBotsMode && (
+          <section className="mb-4 rounded-xl border border-cyan-200/20 bg-cyan-950/35 p-4 text-cyan-100">
+            <h3 className="text-sm font-semibold uppercase tracking-wide">Modo online</h3>
+            <p className="mt-1 text-sm">La mesa online aun no esta conectada al servidor realtime. De momento, usa &quot;Vs bots&quot;.</p>
+          </section>
+        )}
 
         <div className="relative min-h-[720px] overflow-hidden rounded-3xl border border-emerald-900/60 bg-[radial-gradient(circle_at_30%_20%,rgba(52,211,153,0.2),transparent_35%),radial-gradient(circle_at_75%_70%,rgba(16,185,129,0.15),transparent_45%),linear-gradient(145deg,#0f4a37_0%,#0d5a40_45%,#0b3b2d_100%)] shadow-inner">
           <div className="pointer-events-none absolute inset-0 opacity-30 [background-image:repeating-linear-gradient(45deg,rgba(255,255,255,0.04)_0px,rgba(255,255,255,0.04)_2px,transparent_2px,transparent_8px)]" />
@@ -215,7 +268,7 @@ export default function Home() {
                   <div className="mt-3 flex flex-wrap justify-center gap-1.5">
                     {humanHand.map((card) => {
                       const isPlayable = legalCards.has(card.id);
-                      const disabled = game.phase !== "playing" || game.currentTurn !== 0 || !isPlayable || freezeBetweenTricks;
+                      const disabled = !isBotsMode || game.phase !== "playing" || game.currentTurn !== 0 || !isPlayable || freezeBetweenTricks;
 
                       return (
                         <button
@@ -259,9 +312,10 @@ export default function Home() {
           })}
         </div>
 
-        {(game.phase === "bidding" && game.biddingTurn === 0) ||
-        (game.phase === "choose-trump" && game.highestBidder === 0) ||
-        (game.phase === "playing" && game.currentTurn === 0) ? (
+        {isBotsMode &&
+        ((game.phase === "bidding" && game.biddingTurn === 0) ||
+          (game.phase === "choose-trump" && game.highestBidder === 0) ||
+          (game.phase === "playing" && game.currentTurn === 0)) ? (
           <section className="mt-4 rounded-xl border border-emerald-200/20 bg-[#153629] p-4 text-emerald-50">
             {game.phase === "bidding" && game.biddingTurn === 0 && (
               <div>

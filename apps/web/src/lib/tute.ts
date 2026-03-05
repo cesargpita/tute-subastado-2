@@ -20,6 +20,7 @@ export type Trick = {
 };
 
 export type GamePhase = "bidding" | "choose-trump" | "playing" | "finished";
+export type BotDifficulty = "facil" | "normal" | "dificil";
 
 export type CantoEvent = {
   id: number;
@@ -38,6 +39,7 @@ export type TrickResultEvent = {
 
 export type GameState = {
   seed: number;
+  botDifficulty: BotDifficulty;
   phase: GamePhase;
   players: string[];
   hands: Card[][];
@@ -234,8 +236,7 @@ function handStrengthForBid(hand: Card[]): number {
   return points + trumpPotential * 2;
 }
 
-export function estimateBotBid(hand: Card[]): number | null {
-  const strength = handStrengthForBid(hand);
+function bidFromStrength(strength: number): number | null {
 
   if (strength >= 60) {
     return 130;
@@ -300,24 +301,48 @@ export function estimateBotBid(hand: Card[]): number | null {
   return null;
 }
 
-export function chooseBotTrump(hand: Card[]): Suit {
+export function estimateBotBid(hand: Card[], difficulty: BotDifficulty = "normal"): number | null {
+  const baseStrength = handStrengthForBid(hand);
+  const adjustedStrength = baseStrength + (difficulty === "facil" ? -5 : difficulty === "dificil" ? 5 : 0);
+  return bidFromStrength(adjustedStrength);
+}
+
+export function chooseBotTrump(hand: Card[], difficulty: BotDifficulty = "normal"): Suit {
+  if (difficulty === "facil") {
+    const randomSuit = SUITS[Math.floor(Math.random() * SUITS.length)];
+    return randomSuit!;
+  }
+
   const bySuit = SUITS.map((suit) => {
     const cards = hand.filter((c) => c.suit === suit);
     const points = cards.reduce((sum, c) => sum + rankPoints(c.rank), 0);
+    const highCards = cards.filter((c) => c.rank === 1 || c.rank === 3).length;
     return {
       suit,
-      value: cards.length * 3 + points,
+      value: cards.length * 3 + points + (difficulty === "dificil" ? highCards * 3 : 0),
     };
   }).sort((a, b) => b.value - a.value);
 
   return bySuit[0]!.suit;
 }
 
-export function chooseBotCard(hand: Card[], trick: Trick, trump: Suit): Card {
+function randomFrom<T>(items: T[]): T {
+  return items[Math.floor(Math.random() * items.length)]!;
+}
+
+export function chooseBotCard(hand: Card[], trick: Trick, trump: Suit, difficulty: BotDifficulty = "normal"): Card {
   const legal = legalCardsForPlay(hand, trick, trump);
 
+  if (difficulty === "facil" && Math.random() < 0.55) {
+    return randomFrom(legal);
+  }
+
   if (trick.cards.length === 0) {
-    return [...legal].sort((a, b) => cardStrength(b) - cardStrength(a))[0]!;
+    if (difficulty === "dificil") {
+      return [...legal].sort((a, b) => cardStrength(b) - cardStrength(a))[0]!;
+    }
+
+    return [...legal].sort((a, b) => cardStrength(a) - cardStrength(b))[0]!;
   }
 
   const winningPlayer = trickWinner(trick.cards, trump);
@@ -350,14 +375,16 @@ export function chooseBotCard(hand: Card[], trick: Trick, trump: Suit): Card {
   return [...legal].sort((a, b) => cardStrength(a) - cardStrength(b))[0]!;
 }
 
-export function createGame(seed = Date.now()): GameState {
-  const players = ["Tu", "Bot Norte", "Bot Este", "Bot Oeste"];
+export function createGame(seed = Date.now(), options?: { botDifficulty?: BotDifficulty }): GameState {
+  const players = ["Tu", "Paco", "Carmen", "Lola"];
   const deck = shuffle(createDeck(), seed);
   const hands = deal(deck);
   const leader = seed % 4;
+  const botDifficulty = options?.botDifficulty ?? "normal";
 
   return {
     seed,
+    botDifficulty,
     phase: "bidding",
     players,
     hands,
@@ -461,7 +488,7 @@ export function applyBid(state: GameState, playerIndex: number, bid: number | nu
   const hasAnyBid = nextState.currentBid !== null;
 
   if (!hasAnyBid && nextState.passCount >= 4) {
-    return withLog(createGame(state.seed + 1), "Todos pasaron. Se reparten nuevas cartas.");
+    return withLog(createGame(state.seed + 1, { botDifficulty: state.botDifficulty }), "Todos pasaron. Se reparten nuevas cartas.");
   }
 
   if (hasAnyBid && nextState.passCount >= 4) {
@@ -607,7 +634,7 @@ export function getBotAction(state: GameState):
   if (state.phase === "bidding") {
     const playerIndex = state.biddingTurn;
     const hand = state.hands[playerIndex]!;
-    const estimate = estimateBotBid(hand);
+    const estimate = estimateBotBid(hand, state.botDifficulty);
 
     if (estimate === null) {
       return { type: "bid", playerIndex, bid: null };
@@ -625,13 +652,13 @@ export function getBotAction(state: GameState):
   if (state.phase === "choose-trump") {
     const playerIndex = state.highestBidder!;
     const hand = state.hands[playerIndex]!;
-    return { type: "trump", playerIndex, trump: chooseBotTrump(hand) };
+    return { type: "trump", playerIndex, trump: chooseBotTrump(hand, state.botDifficulty) };
   }
 
   if (state.phase === "playing") {
     const playerIndex = state.currentTurn;
     const hand = state.hands[playerIndex]!;
-    const card = chooseBotCard(hand, state.currentTrick, state.trump!);
+    const card = chooseBotCard(hand, state.currentTrick, state.trump!, state.botDifficulty);
     return { type: "play", playerIndex, cardId: card.id };
   }
 
